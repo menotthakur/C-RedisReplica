@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
  
   //accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
   int client_fd = accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len); //the return value of accept function stored in client_fd.holds the socket file descriptor of the newly accepted client connection.
-  send(client_fd, "+PONG\r\n", 7, 0);   // "+PONG\r\n": This is the message to be sent to the client. It's a string containing the characters "+PONG\r\n". The \r\n at the end is a carriage return and line feed, which is a common way to terminate a message in network communication. 
+  //send(client_fd, "+PONG\r\n", 7, 0);   // "+PONG\r\n": This is the message to be sent to the client. It's a string containing the characters "+PONG\r\n". The \r\n at the end is a carriage return and line feed, which is a common way to terminate a message in network communication. 
 //  7: This is the length of the message to be sent, in bytes. In this case, the length of the string "+PONG\r\n" is 7 bytes:
 //
 //+ (1 byte)
@@ -72,6 +72,20 @@ int main(int argc, char **argv) {
   
   
   std::cout << "Client connected\n";
+
+  while (1) {
+  char* msg[100];
+  if (recv(client_fd, (void*) msg, 100, 0) == -1) {
+    std::cerr << "Failed to receive message\n";
+    return 1;
+  }
+  const char* message = "+PONG\r\n";
+  if (send(client_fd, (const void*) message, strlen(message), 0) == -1) {
+    std::cerr << "Failed to send message\n";
+    return 1;
+  }
+  }
  
-  close(server_fd);  return 0;
+  close(server_fd);  
+  return 0;
 }
