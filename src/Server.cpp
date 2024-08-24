@@ -1,4 +1,167 @@
 
+
+#include <iostream>
+#include <cstdlib>
+#include <string>
+#include <cstring>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <thread>
+#include <vector>
+#include "./RedisParser.hpp"
+
+#define BUFFER_SIZE 128
+
+// Function to handle client connections
+void handle(int fd)
+{
+    // Buffer to store incoming data
+    char buff[BUFFER_SIZE] = "";
+    bzero(&buff,sizeof(buff));
+
+    while(1)
+    {
+        // Clear buffer for each new message
+        memset(&buff,'\0',sizeof(buff));
+        // Receive a fixed size of data from the client
+        
+
+        // Receive more data from the client if necessary
+        int recv_bytes = recv(fd, buff, sizeof(buff), 0);
+        if(recv_bytes <= 0)
+            return;
+
+        // Parse the received data using the Redis parser
+        std::string recv_str(buff, recv_bytes);
+        Redisparser request(recv_str);
+        std::vector<std::string> argStr =  request.parser();
+
+        // Check the first argument in the parsed command
+        std::string reply = argStr[0];
+        
+        // Handle the PING command
+        if(reply == "ping")
+        {
+            send(fd, "+PONG\r\n", 7, 0);
+        }
+        // Handle the ECHO command
+        else if(reply == "echo")
+        {
+            for(int i = 1; i < argStr.size(); ++i)
+                reply = "$" + std::to_string(argStr[i].size()) + "\r\n" + argStr[i] + "\r\n";
+            send(fd, reply.c_str(), reply.size(), 0);
+        }
+        else
+        {
+            // Break the loop if an unknown command is received
+            break;
+        }
+
+        // Ignore unrelated input and continue the loop
+        
+    }
+    return;
+}
+
+int main(int argc, char **argv)
+{
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd < 0)
+    {
+        std::cerr << "Failed to create server socket\n";
+        return 1;
+    }
+
+    int reuse = 1;
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0)
+    {
+        std::cerr << "setsockopt failed\n";
+        return 1;
+    }
+
+    struct sockaddr_in server_addr;
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(6379);
+
+    if (bind(server_fd, (struct sockaddr *) &server_addr, sizeof(server_addr)) != 0)
+    {
+        std::cerr << "Failed to bind to port 6379\n";
+        return 1;
+    }
+
+    int connection_backlog = 5;
+    if (listen(server_fd, connection_backlog) != 0)
+    {
+        std::cerr << "listen failed\n";
+        return 1;
+    }
+
+    struct sockaddr_in client_addr;
+    int client_addr_len = sizeof(client_addr);
+    
+    std::cout << "Waiting for a client to connect...\n";
+    
+    // Vector to keep track of client handling threads
+    std::vector<std::thread> cli_threads;
+
+    while(1)
+    {
+        int clientFd = accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
+        std::cout << "Client connected\n";
+        
+        // Create a new thread to handle the client connection
+        cli_threads.push_back(std::thread(handle, clientFd));
+    }
+
+    // Join all client handling threads
+    for(auto& cli_thread: cli_threads)
+    {
+        if(cli_thread.joinable())
+            cli_thread.join();
+    }
+
+    close(server_fd);
+    return 0;
+}
+
+/*
+Potential Interview Questions:
+Why did you introduce the Redis parser in your code?
+
+Explanation: I introduced the Redis parser to handle more complex Redis commands like PING and ECHO. 
+This modular approach allows the program to interpret and process different commands from the client in a structured manner.
+
+How does your code handle multiple client connections?
+
+Explanation: The code handles multiple client connections by spawning a new thread for each incoming client connection.
+
+ Each thread runs the handle function, which processes the client's commands independently. 
+ This ensures that the server can handle multiple clients simultaneously without blocking.
+What is the purpose of the SO_REUSEADDR socket option?
+
+Explanation: The SO_REUSEADDR socket option allows the server to bind to an address that is in a TIME_WAIT state.
+
+ This is useful when restarting the server frequently, as it prevents the "Address already in use" error.
+
+Can you explain the PING and ECHO command handling in your code?
+
+Explanation: The PING command is handled by sending back a +PONG\r\n response to the client. 
+The ECHO command takes additional arguments and sends them back to the client, prefixed with the length of each argument, formatted according to the Redis protocol.
+
+Why do you use the std::vector<std::thread> for client threads?
+
+Explanation: I used std::vector<std::thread> to store all the client-handling threads. 
+This allows me to keep track of all threads and ensures that they can be properly joined before the server shuts down, avoiding potential resource leaks or crashes.
+*/
+
+
+
+
+/*
 #include <iostream>
 #include <cstdlib>
 #include <string>
@@ -97,7 +260,7 @@ int main(int argc, char **argv) {
 }
 
 
-
+*/
 
 
 
