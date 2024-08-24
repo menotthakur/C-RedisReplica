@@ -1,3 +1,151 @@
+
+#include <iostream>
+#include <cstdlib>
+#include <string>
+#include <cstring>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <thread>
+#include <vector>
+
+// Function to handle communication with a connected client
+void handle_client(int client_fd) {
+    // Message to send back to the client
+    std::string msg = "+PONG\r\n";
+    
+    // Infinite loop to keep the connection with the client alive
+    while (true) {
+        char buf[1024];  // Buffer to store the client's message
+        
+        // Receive data from the client
+        int rc = recv(client_fd, &buf, sizeof(buf), 0);
+        
+        // If the client has disconnected or an error occurred, exit the loop
+        if (rc <= 0) {
+            close(client_fd);  // Close the connection with the client
+            break;
+        }
+        
+        // Send a PONG response back to the client
+        write(client_fd, msg.c_str(), msg.size());
+    }
+}
+
+int main(int argc, char **argv) {
+    // This is where the server setup begins
+    std::cout << "Logs from your program will appear here!\n";
+
+    // Create a socket using IPv4 (AF_INET) and TCP (SOCK_STREAM)
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    
+    // Check if the socket was successfully created
+    if (server_fd < 0) {
+        std::cerr << "Failed to create server socket\n";
+        return 1;
+    }
+
+    // Set the socket option to reuse the address (useful for quick restarts)
+    int reuse = 1;
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
+        std::cerr << "setsockopt failed\n";
+        return 1;
+    }
+
+    // Define the server's address and port
+    struct sockaddr_in server_addr;
+    server_addr.sin_family = AF_INET;  // Use IPv4
+    server_addr.sin_addr.s_addr = INADDR_ANY;  // Bind to any available network interface
+    server_addr.sin_port = htons(6379);  // Use port 6379 (default Redis port)
+
+    // Bind the socket to the specified address and port
+    if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) != 0) {
+        std::cerr << "Failed to bind to port 6379\n";
+        return 1;
+    }
+
+    // Start listening for incoming connections, with a maximum backlog of 5 connections
+    int connection_backlog = 5;
+    if (listen(server_fd, connection_backlog) != 0) {
+        std::cerr << "listen failed\n";
+        return 1;
+    }
+
+    // Prepare to accept client connections
+    struct sockaddr_in client_addr;
+    int client_addr_len = sizeof(client_addr);
+    std::cout << "Waiting for a client to connect...\n";
+
+    // Accept the first client connection
+    int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, (socklen_t *)&client_addr_len);
+    std::cout << "Client connected\n";
+
+    // Handle the client's requests in a separate function
+    handle_client(client_fd);
+
+    // Infinite loop to accept and handle multiple client connections
+    while (true) {
+        // Accept a new client connection
+        int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, (socklen_t *)&client_addr_len);
+        std::cout << "Client connected\n";
+        
+        // Create a new thread to handle the client, allowing the server to accept more connections
+        std::thread nw(handle_client, client_fd);
+        
+        // Detach the thread so that it can run independently
+        nw.detach();
+    }
+
+    // Close the server socket when done (this line will never be reached in this infinite loop)
+    close(server_fd);
+    return 0;
+}
+
+
+
+
+
+
+/*Potential Interview Questions and Explanations:
+Q: Why did you decide to switch from the newer code to the older one?
+
+A: The newer code is single-threaded, meaning it can only handle one client at a time. This limits its scalability in real-world
+ scenarios where a server needs to manage multiple client connections simultaneously. The older code introduces threading, which 
+ allows the server to handle multiple clients concurrently, making it more robust and suitable for production environments.
+Q: What are the main differences between the new and old code?
+
+A: The main difference is the use of threading in the old code to handle multiple clients at once. The newer code is simpler but
+ only manages one client connection at a time, which can cause the server to become unresponsive if multiple clients try to connect. 
+ The old code also makes use of a more robust buffer management approach and better handles socket closures.
+Q: What potential issues did you identify in the newer code?
+
+A: The newer code has a few potential issues:
+It uses a fixed-size buffer of 100 bytes, which may not be sufficient for all message sizes, leading to data truncation.
+The code is single-threaded, limiting it to one client at a time, which can be problematic in a multi-client environment.
+The buffer is declared as char* msg[100], which might cause undefined behavior due to improper memory handling.
+Q: Why did you include error handling in the newer code?
+
+A: Error handling is crucial for identifying issues during socket communication, such as failed message sending or receiving. 
+This ensures that the server can gracefully handle unexpected situations, like a client disconnecting or sending an incomplete message, 
+which is essential for maintaining a reliable server.
+Q: How does the older code improve upon the newer one?
+
+A: The older code improves scalability by using threading, allowing the server to handle multiple clients concurrently. 
+This makes the server more efficient and responsive in a real-world scenario where multiple clients might connect simultaneously. 
+Additionally, the buffer management and client handling logic in the older code are more robust, reducing the risk of errors or crashes.*/
+
+
+
+
+
+
+
+
+
+/*
+
 #include <iostream>
 #include <cstdlib>
 #include <string>
@@ -89,3 +237,6 @@ int main(int argc, char **argv) {
   close(server_fd);  
   return 0;
 }
+
+
+*/
