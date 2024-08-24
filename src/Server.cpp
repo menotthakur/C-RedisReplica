@@ -53,7 +53,24 @@ int main(int argc, char **argv) {
  
   std::cout << "Waiting for a client to connect...\n";
  
-  accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
+  //accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
+  int client_fd = accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len); //the return value of accept function stored in client_fd.holds the socket file descriptor of the newly accepted client connection.
+  send(client_fd, "+PONG\r\n", 7, 0);   // "+PONG\r\n": This is the message to be sent to the client. It's a string containing the characters "+PONG\r\n". The \r\n at the end is a carriage return and line feed, which is a common way to terminate a message in network communication. 
+//  7: This is the length of the message to be sent, in bytes. In this case, the length of the string "+PONG\r\n" is 7 bytes:
+//
+//+ (1 byte)
+//P (1 byte)
+//O (1 byte)
+//N (1 byte)
+//G (1 byte)
+//\r (1 byte)
+//\n (1 byte)
+//The send function will send exactly 7 bytes of data to the client.
+//
+//0: This is the flags argument to the send function. In this case, it's set to 0, which means no special flags are used. The send function will perform a normal,
+// blocking send operation.
+  
+  
   std::cout << "Client connected\n";
  
   close(server_fd);  return 0;
