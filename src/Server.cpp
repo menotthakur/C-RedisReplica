@@ -76,14 +76,7 @@ int main(int argc, char **argv) {
     // Prepare to accept client connections
     struct sockaddr_in client_addr;
     int client_addr_len = sizeof(client_addr);
-    std::cout << "Waiting for a client to connect...\n";
-
-    // Accept the first client connection
-    int client_fd = accept(server_fd, (struct sockaddr *)&client_addr, (socklen_t *)&client_addr_len);
-    std::cout << "Client connected\n";
-
-    // Handle the client's requests in a separate function
-    handle_client(client_fd);
+    
 
     // Infinite loop to accept and handle multiple client connections
     while (true) {
