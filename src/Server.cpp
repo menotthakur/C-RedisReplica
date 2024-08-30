@@ -7,161 +7,145 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <thread>
 #include <vector>
+#include <pthread.h>
+#include <cassert>
 #include <map>
-#include <chrono>
-void* handle_client(void* arg);
-std::vector<std::string> parse_command(const std::string& command);
-std::map<std::string, std::string> keyValues;
-std::map<std::string, long> expTime;
+const int BUFFER_SIZE = 2048;
+int head = 0;
+std::string data;
+std::map<std::string, std::string> storage;
+std::map<std::string, std::chrono::time_point<std::chrono::system_clock>> expiry;
+void err(std::string msg) {
+  std::cerr << "ERROR: " << msg << std::endl;
+}
+char nextToken() {
+  if (head == data.size()) return '\0';
+  return data[head++];
+}
+void match(char c) {
+  char token = nextToken();
+  if (c != token) err("Expected " + std::string(1, c) + " , found " + std::string(1, token));
+}
+std::string parseBulkString() {
+  int len = 0;
+  while (1) {
+    char c = nextToken();
+    if (c >= '0' && c <= '9') {
+      len = len * 10 + c - '0';
+    } else break;
+  }
+  match('\n');
+  std::string msg;
+  for (int i = 0; i < len; ++i) {
+    msg += nextToken();
+  }
+  match('\r');
+  match('\n');
+  return msg;
+}
+std::vector<std::string> parseCommand() {
+  std::vector<std::string> cmds;
+  head = 0;
+  match('*');
+  int argc = 0;
+  while (1) {
+    char c = nextToken();
+    if (c >= '0' && c <= '9') {
+      argc = argc * 10 + c - '0';
+    } else break;
+  }
+  match('\n');
+  for (int i = 0; i < argc; ++i) {
+    match('$');
+    cmds.push_back(parseBulkString());  
+  }
+  return cmds;
+}
+void handleRequest(int client_fd) {
+  char buffer[BUFFER_SIZE] = "";
+  std::cout << "Handling request from client " << client_fd << "\n";
+  while (true) {
+    while (recv(client_fd, buffer, BUFFER_SIZE, 0)) {
+      std::string request(buffer), response;
+      data = request;
+      std::vector<std::string> cmds = parseCommand();
+      if (cmds[0] == "ping") {
+        response = "+PONG\r\n";
+      } else if (cmds[0] == "echo") {
+        std::string argv = cmds[1];
+        response = "$" + std::to_string(argv.size()) + "\r\n" + argv + "\r\n";      
+      } else if (cmds[0] == "get") {
+        std::string key = cmds[1];
+        //if (storage.find(key) == storage.end()) {
+        if (storage.find(key) == storage.end() || expiry[key] < std::chrono::system_clock::now()) {
+          response = "$-1\r\n";
+        } else {
+          std::string value = storage[key];
+          response = "$" + std::to_string(value.size()) + "\r\n" + value + "\r\n";
+        }    
+      } else if (cmds[0] == "set") {
+        std::chrono::time_point<std::chrono::system_clock> exp;
+        std::string key = cmds[1];
+        std::string value = cmds[2];
+        if (cmds.size() == 5) {
+          int ttl = std::stoi(cmds[4]);
+          exp = std::chrono::system_clock::now() + std::chrono::milliseconds(ttl);
+        } else {
+          exp = std::chrono::system_clock::now() + std::chrono::seconds(1000);
+        }
+        storage[key] = value;
+        expiry[key] = exp;
+        response = "$2\r\nOK\r\n";
+      }
+      send(client_fd, response.c_str(), response.size(), 0);
+    }
+  }
+}
 int main(int argc, char **argv) {
-  // Uncomment this block to pass the first stage
-   int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-   if (server_fd < 0) {
+  // You can use print statements as follows for debugging, they'll be visible when running tests.
+  std::cout << "Logs from your program will appear here!\n";
+  int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (server_fd < 0) {
     std::cerr << "Failed to create server socket\n";
     return 1;
-   }
-   // Since the tester restarts your program quite often, setting SO_REUSEADDR
-   // ensures that we don't run into 'Address already in use' errors
-   int reuse = 1;
-   if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
-     std::cerr << "setsockopt failed\n";
-     return 1;
-   }
-   struct sockaddr_in server_addr;
-   server_addr.sin_family = AF_INET;
-   server_addr.sin_addr.s_addr = INADDR_ANY;
-   server_addr.sin_port = htons(6379);
-   if (bind(server_fd, (struct sockaddr *) &server_addr, sizeof(server_addr)) != 0) {
-     std::cerr << "Failed to bind to port 6379\n";
-     return 1;
-   }
-   int connection_backlog = 5;
-   if (listen(server_fd, connection_backlog) != 0) {
-     std::cerr << "listen failed\n";
-     return 1;
-   }
-   struct sockaddr_in client_addr;
-   int client_addr_len = sizeof(client_addr);
-   std::cout << "Waiting for a client to connect...\n";
-    while (true){
-        int client_fd = accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t*) &client_addr_len);
-        if (client_fd < 0) {
-            std::cerr << "accept failed\n";
-            return 1;
-        }
-        pthread_t thread;
-        pthread_create(&thread, nullptr, handle_client, &client_fd);
+  }
+  int reuse = 1;
+  if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
+    std::cerr << "setsockopt failed\n";
+    return 1;
+  }
+  struct sockaddr_in server_addr;
+  server_addr.sin_family = AF_INET;
+  server_addr.sin_addr.s_addr = INADDR_ANY;
+  server_addr.sin_port = htons(6379);
+  if (bind(server_fd, (struct sockaddr *) &server_addr, sizeof(server_addr)) != 0) {
+    std::cerr << "Failed to bind to port 6379\n";
+    return 1;
+  }
+  int connection_backlog = 5;
+  if (listen(server_fd, connection_backlog) != 0) {
+    std::cerr << "listen failed\n";
+    return 1;
+  }
+  
+  struct sockaddr_in client_addr;
+  int client_addr_len = sizeof(client_addr);
+  std::cout << "Waiting for a client to connect...\n";
+  while (true) {
+    int client_fd = accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
+    if (client_fd == -1) return 1;
+    std::cout << "Client connected\n";
+    pid_t pid = fork();
+    if (pid == 0) {
+      handleRequest(client_fd);
+      close(client_fd);
+      exit(0);
+    } else {
+      close(client_fd);
     }
+  }
+  close(server_fd);
   return 0;
-}
-void* handle_client(void* arg) {
-    int clientSock = *(int*)arg;
-    char buffer[1024];
-    char recvBuffer[1024];
-    strcpy(buffer, "+PONG\r\n");
-    long n;
-    while ((n=recv(clientSock, recvBuffer, 1024, 0)) > 0) {
-      recvBuffer[n] = '\0';
-      std::vector<std::string> command = parse_command(recvBuffer);
-      std::cout<< "Command[0] " << command[0] << std::endl;
-      if (strcmp(command[0].c_str(), "SET")==0){
-            keyValues[command[1]] = command[2];
-        if (command.size()>3 && strcmp(command[3].c_str(), "px")==0){
-            auto now = std::chrono::system_clock::now();
-            auto now_in_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(now);
-            auto value = now_in_ms.time_since_epoch();
-            long current_time_in_ms = value.count();
-            expTime[command[1]] = current_time_in_ms + std::stoi(command[4]);
-        }
-           else expTime[command[1]] = -1;
-            strcpy(buffer, "+OK\r\n");
-            send(clientSock, buffer, strlen(buffer), 0);
-      }
-      else if (strcmp(command[0].c_str(), "GET")==0){
-            if (keyValues.find(command[1]) != keyValues.end()){
-          auto now = std::chrono::system_clock::now();
-          auto now_in_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(now);
-          auto value = now_in_ms.time_since_epoch();
-          long current_time_in_ms = value.count();
-          if (keyValues.find(command[1]) != keyValues.end() && (expTime[command[1]]==-1 || expTime[command[1]]>current_time_in_ms)){
-                strcpy(buffer, "$");
-                strcpy(buffer+1, std::to_string(keyValues[command[1]].length()).c_str());
-                strcpy(buffer+1+std::to_string(keyValues[command[1]].length()).length(), "\r\n");
-                strcpy(buffer+1+std::to_string(keyValues[command[1]].length()).length()+2, keyValues[command[1]].c_str());
-                strcpy(buffer+1+std::to_string(keyValues[command[1]].length()).length()+2+keyValues[command[1]].length(), "\r\n");
-                send(clientSock, buffer, strlen(buffer), 0);
-            }
-            else{
-                strcpy(buffer, "$-1\r\n");
-                send(clientSock, buffer, strlen(buffer), 0);
-            }
-      }
-      else if (strcmp(command[0].c_str(), "ECHO")==0){
-        int i = 1;
-        std::string bulkString = "$";
-        while (i<command.size())
-        {
-            bulkString += std::to_string(command[i].length());
-            bulkString += "\r\n";
-            bulkString += command[i];
-            std::cout<<"Command["<<i<<"]: " << command[i] << std::endl;
-            bulkString += "\r\n";
-            i++;
-        }
-        // Now bulkString contains the entire message to be sent
-        // You can return it or use it elsewhere
-          strcpy(buffer, bulkString.c_str());
-          send(clientSock, buffer, strlen(buffer), 0);
-      }
-      else if (strcmp(command[0].c_str(), "PING")==0){
-          strcpy(buffer, "+PONG\r\n");
-          send(clientSock, buffer, strlen(buffer), 0);
-      }
-    }
-    close(clientSock);
-    return nullptr;
-}
-std::vector<std::string> parse_command(const std::string& command) {
-    long i = 1;
-    unsigned long len = 0;
-    int arrLen = 0;
-    std::vector<std::string> result;
-    switch (command[0]) {
-        case '$':
-            while (command[i]!='\0'){
-                while (command[i] != '\r'&&command[i+1]!='\n') {
-                    len = len*10 + (command[i] - '0');
-                    i++;
-                }
-                result.push_back(command.substr(i+2, len));
-                i = i+2+len+2;
-                len = 0;
-            }
-            break;
-        case '*':
-            i = 1;
-            while (command[i] != '\r'&&command[i+1]!='\n') {
-                arrLen = arrLen*10 + (command[i] - '0');
-                i++;
-            }
-            i = i+2;
-            while(arrLen>0){
-                len = 0;
-                i++;//skips the $ or the + character
-                while (command[i] != '\r') {
-                    len = len*10 + (command[i] - '0');
-                    i++;
-                }
-                result.push_back(command.substr(i+2, len));
-                i = i+2+len+2;
-                arrLen--;
-            }
-            break;
-        default:
-            len = 0;
-            len = command.length();
-            result.push_back(command.substr(1, len-3));
-    }
-    return result;
 }
