@@ -98,13 +98,13 @@ int main(int argc, char **argv) {
   //
   struct sockaddr_in client_addr;
   int client_addr_len = sizeof(client_addr);
-
+  
   std::cout << "Waiting for a client to connect...\n";
-
+  
   int n_connections = 0;
   do {
     int client_fd;
-    client_fd = accept(server_fd,(struct sockaddr*) &client_addr, (socklen_t )&client_addr_len);
+    client_fd = accept(server_fd,(struct sockaddr*) &client_addr, (socklen_t *)&client_addr_len);
     std::thread t(handle_connection, client_fd);
     t.detach();
     ++n_connections;
