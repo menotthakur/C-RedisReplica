@@ -48,6 +48,11 @@ std::vector<std::string> parse_resp(const std::string& input) {
         std::cerr << "Parsed argument: " << line << std::endl;
     }
 
+    if (result.size() != array_length) {
+        std::cerr << "Invalid array length: expected " << array_length << ", got " << result.size() << std::endl;
+        return {};  // Invalid array length
+    }
+
     return result;
 }
 
