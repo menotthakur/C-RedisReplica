@@ -41,6 +41,8 @@ std::string handle_command(const std::vector<std::string>& parts) {
 
     if (parts[0] == "PING") {
         return "+PONG\r\n";
+    } else if (parts[0] == "ECHO" && parts.size() >= 2) {
+        return "$" + std::to_string(parts[1].length()) + "\r\n" + parts[1] + "\r\n";
     } else if (parts[0] == "SET" && parts.size() >= 3) {
         data_store[parts[1]] = parts[2];
         return "+OK\r\n";
