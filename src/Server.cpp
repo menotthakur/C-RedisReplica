@@ -32,7 +32,7 @@ void handle_connection(int client) {
   std::cout << "Client connected" << client << "\n";
   char buffer[BUFFER_SIZE];
   int bytes_read;
-  const char pong_response = "+PONG\r\n";
+  const char* pong_response = "+PONG\r\n";
   while ((bytes_read = read(client, buffer, BUFFER_SIZE-1))>0){
     buffer[bytes_read] = '\0'; //null terminate the buffer
     std::cout << "received: " << buffer << std::endl;
@@ -104,7 +104,7 @@ int main(int argc, char **argv) {
   int n_connections = 0;
   do {
     int client_fd;
-    client_fd = accept(server_fd,(struct sockaddr*) &client_addr, (socklen_t *)&client_addr_len);
+    client_fd = accept(server_fd,(struct sockaddr*) &client_addr, (socklen_t )&client_addr_len);
     std::thread t(handle_connection, client_fd);
     t.detach();
     ++n_connections;
