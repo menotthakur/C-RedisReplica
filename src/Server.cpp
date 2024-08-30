@@ -31,27 +31,28 @@ std::vector<std::string> parse_resp(const std::string& input) {
     std::cerr << "Array length: " << array_length << std::endl;
 
     for (int i = 0; i < array_length; ++i) {
-        std::getline(iss, line);
-        if (line[0] != '$') {
-            std::cerr << "Invalid format: expected '$', got '" << line << "'" << std::endl;
-            return {};  // Invalid format
-        }
-
-        int str_length = std::stoi(line.substr(1));
-        std::getline(iss, line);
-        if (line.length() != str_length) {
-            std::cerr << "Invalid length: expected " << str_length << ", got " << line.length() << std::endl;
-            return {};  // Invalid length
-        }
-
-        result.push_back(line);
-        std::cerr << "Parsed argument: " << line << std::endl;
+    std::getline(iss, line);
+    if (line[0] != '$') {
+        std::cerr << "Invalid format: expected '$', got '" << line << "'" << std::endl;
+        return {};  // Invalid format
     }
 
-    if (result.size() != array_length) {
-        std::cerr << "Invalid array length: expected " << array_length << ", got " << result.size() << std::endl;
-        return {};  // Invalid array length
+    int str_length = std::stoi(line.substr(1));
+    std::getline(iss, line);
+    if (line.length() != str_length) {
+        std::cerr << "Invalid length: expected " << str_length << ", got " << line.length() << std::endl;
+        return {};  // Invalid length
     }
+
+    result.push_back(line);
+    std::cerr << "Parsed argument: " << line << std::endl;
+}
+
+// Add this check
+if (result.size() != array_length) {
+    std::cerr << "Invalid array length: expected " << array_length << ", got " << result.size() << std::endl;
+    return {};  // Invalid array length
+}
 
     return result;
 }
