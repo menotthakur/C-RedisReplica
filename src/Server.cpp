@@ -7,24 +7,34 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#include <sstream>
 #include <vector>
 #include <unordered_map>
 
 std::unordered_map<std::string, std::string> data_store;
 
-std::vector<std::string> split(const std::string& s, char delimiter) {
-    std::vector<std::string> tokens;
-    std::string token;
-    std::istringstream tokenStream(s);
-    while (std::getline(tokenStream, token, delimiter)) {
-        tokens.push_back(token);
+std::vector<std::string> parse_resp(const std::string& input) {
+    std::vector<std::string> result;
+    size_t pos = 0;
+    while (pos < input.size()) {
+        if (input[pos] == '*') {
+            // Array, skip the count
+            pos = input.find("\r\n", pos) + 2;
+        } else if (input[pos] == '$') {
+            // Bulk string
+            size_t len_end = input.find("\r\n", pos);
+            int len = std::stoi(input.substr(pos + 1, len_end - pos - 1));
+            pos = len_end + 2;
+            result.push_back(input.substr(pos, len));
+            pos += len + 2; // Skip the string and the \r\n
+        } else {
+            // Unexpected character
+            break;
+        }
     }
-    return tokens;
+    return result;
 }
 
-std::string handle_command(const std::string& command) {
-    std::vector<std::string> parts = split(command, ' ');
+std::string handle_command(const std::vector<std::string>& parts) {
     if (parts.empty()) {
         return "-ERR empty command\r\n";
     }
@@ -37,7 +47,7 @@ std::string handle_command(const std::string& command) {
     } else if (parts[0] == "GET" && parts.size() == 2) {
         auto it = data_store.find(parts[1]);
         if (it != data_store.end()) {
-            return "+" + it->second + "\r\n";
+            return "$" + std::to_string(it->second.length()) + "\r\n" + it->second + "\r\n";
         } else {
             return "$-1\r\n";
         }
@@ -101,7 +111,7 @@ int main() {
             }
             buffer[bytes_read] = '\0';
 
-            std::string command(buffer);
+            std::vector<std::string> command = parse_resp(std::string(buffer));
             std::string response = handle_command(command);
 
             if (send(client_fd, response.c_str(), response.length(), 0) == -1) {
