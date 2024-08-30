@@ -11,6 +11,7 @@
 #include <vector>
 #include <unordered_map>
 #include <sstream>
+#include <algorithm>
 
 #define BUFFER_SIZE 1024
 
@@ -21,17 +22,25 @@ std::vector<std::string> parse_resp(const std::string& input) {
     std::istringstream iss(input);
     std::string line;
 
-    // Read the first line (array length)
     std::getline(iss, line);
+    if (line[0] != '*') {
+        return result;  // Invalid format
+    }
+
     int array_length = std::stoi(line.substr(1));
 
     for (int i = 0; i < array_length; ++i) {
-        // Read bulk string length
         std::getline(iss, line);
-        int str_length = std::stoi(line.substr(1));
+        if (line[0] != '$') {
+            return {};  // Invalid format
+        }
 
-        // Read actual string
+        int str_length = std::stoi(line.substr(1));
         std::getline(iss, line);
+        if (line.length() != str_length) {
+            return {};  // Invalid length
+        }
+
         result.push_back(line);
     }
 
@@ -56,6 +65,7 @@ void handle(int fd)
 
         std::string reply;
         std::string command = argStr[0];
+        std::transform(command.begin(), command.end(), command.begin(), ::tolower);
         
         if(command == "ping")
         {
@@ -84,14 +94,14 @@ void handle(int fd)
         }
         else
         {
-            reply = "-ERR unknown command\r\n";
+            reply = "-ERR unknown command '" + command + "'\r\n";
         }
 
         send(fd, reply.c_str(), reply.size(), 0);
     }
 }
 
-int main(int argc, char **argv) {
+int main() {
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0) {
         std::cerr << "Failed to create server socket\n";
@@ -120,23 +130,20 @@ int main(int argc, char **argv) {
         return 1;
     }
     
-    struct sockaddr_in client_addr;
-    int client_addr_len = sizeof(client_addr);
-    
     std::cout << "Waiting for a client to connect...\n";
-    std::vector<std::thread> cli_threads;
     
     while(1)
     {
+        struct sockaddr_in client_addr;
+        int client_addr_len = sizeof(client_addr);
         int clientFd = accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
+        if (clientFd < 0) {
+            std::cerr << "Failed to accept client connection\n";
+            continue;
+        }
         std::cout << "Client connected\n";
-        cli_threads.push_back(std::thread(handle, clientFd));
-    }
-
-    for(auto& cli_thread: cli_threads)
-    {
-        if(cli_thread.joinable())
-            cli_thread.join();
+        handle(clientFd);
+        close(clientFd);
     }
 
     close(server_fd);
